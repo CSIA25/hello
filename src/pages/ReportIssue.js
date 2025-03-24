@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db } from '../firebase';
 
 export default function ReportIssue() {
@@ -12,16 +11,12 @@ export default function ReportIssue() {
     category: 'environment',
     contactPhone: ''
   });
-  const [images, setImages] = useState([]);
-  const [imagePreview, setImagePreview] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
   
   const auth = getAuth();
-  const storage = getStorage();
   
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -39,84 +34,20 @@ export default function ReportIssue() {
     }));
   };
   
-  const handleImageChange = (e) => {
-    if (e.target.files) {
-      const selectedFiles = Array.from(e.target.files);
-      
-      // Limit to 5 images
-      if (images.length + selectedFiles.length > 5) {
-        setError('You can upload a maximum of 5 images');
-        return;
-      }
-      
-      setImages(prevImages => [...prevImages, ...selectedFiles]);
-      
-      // Create preview URLs
-      const newImagePreviews = selectedFiles.map(file => URL.createObjectURL(file));
-      setImagePreview(prevPreviews => [...prevPreviews, ...newImagePreviews]);
-    }
-  };
-  
-  const removeImage = (index) => {
-    // Remove from both arrays
-    const newImages = [...images];
-    const newPreviews = [...imagePreview];
-    
-    // Revoke object URL to prevent memory leaks
-    URL.revokeObjectURL(newPreviews[index]);
-    
-    newImages.splice(index, 1);
-    newPreviews.splice(index, 1);
-    
-    setImages(newImages);
-    setImagePreview(newPreviews);
-  };
-  
-  const uploadImagesToFirebase = async () => {
-    if (images.length === 0) return [];
-    
-    const imageUrls = [];
-    let uploadCount = 0;
-    
-    for (const imageFile of images) {
-      // Create a unique file name
-      const fileName = `${Date.now()}-${imageFile.name}`;
-      const storageRef = ref(storage, `issue-images/${fileName}`);
-      
-      // Upload file
-      await uploadBytes(storageRef, imageFile);
-      
-      // Get download URL
-      const url = await getDownloadURL(storageRef);
-      imageUrls.push(url);
-      
-      // Update progress
-      uploadCount++;
-      setUploadProgress(Math.round((uploadCount / images.length) * 100));
-    }
-    
-    return imageUrls;
-  };
-  
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     setSuccess(false);
-    setUploadProgress(0);
     
     try {
-      // Upload images first
-      const imageUrls = await uploadImagesToFirebase();
-      
       // Create the report object
       const reportData = {
         ...formData,
         userId: currentUser ? currentUser.uid : 'anonymous',
         userEmail: currentUser ? currentUser.email : 'anonymous',
-        status: 'new',
+        status: 'pending',
         createdAt: serverTimestamp(),
-        imageUrls: imageUrls,
       };
       
       // Add the document to Firestore
@@ -131,8 +62,6 @@ export default function ReportIssue() {
         contactPhone: ''
       });
       
-      setImages([]);
-      setImagePreview([]);
       setSuccess(true);
     } catch (err) {
       console.error('Error submitting issue:', err);
@@ -227,63 +156,6 @@ export default function ReportIssue() {
                 onChange={handleChange}
                 placeholder="Please describe the issue in detail"
               />
-            </div>
-            
-            {/* Image Upload Section */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Upload Images (Max 5)
-              </label>
-              <div className="mt-1 flex items-center">
-                <label className="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                  <input
-                    type="file"
-                    className="sr-only"
-                    accept="image/*"
-                    multiple
-                    onChange={handleImageChange}
-                  />
-                  Select Images
-                </label>
-                <span className="ml-3 text-sm text-gray-500">
-                  {images.length}/5 images selected
-                </span>
-              </div>
-              
-              {/* Image Previews */}
-              {imagePreview.length > 0 && (
-                <div className="mt-4 grid grid-cols-2 gap-4">
-                  {imagePreview.map((src, index) => (
-                    <div key={index} className="relative">
-                      <img 
-                        src={src} 
-                        alt={`Preview ${index + 1}`} 
-                        className="h-32 w-full object-cover rounded-md"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeImage(index)}
-                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 h-6 w-6 flex items-center justify-center"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              {/* Upload Progress */}
-              {loading && images.length > 0 && (
-                <div className="mt-4">
-                  <div className="bg-gray-200 rounded-full h-2.5 w-full">
-                    <div 
-                      className="bg-primary-600 h-2.5 rounded-full" 
-                      style={{ width: `${uploadProgress}%` }}
-                    ></div>
-                  </div>
-                  <p className="text-sm text-gray-500 mt-1">Uploading: {uploadProgress}%</p>
-                </div>
-              )}
             </div>
             
             <div>
